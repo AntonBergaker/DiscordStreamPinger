@@ -1,0 +1,30 @@
+﻿{
+  "discord": {
+    "token": "",
+    "welcome": {
+      "channel": 0,
+      "title": "Welcome {user}",
+      "description": "",
+      "color": "E32C2C"
+    },
+    "guildId": 0,
+    "statusChannel": 0,
+    "streamingRole": 0,
+    "pingedRole": 0
+  },
+  "youTube": {
+    "apiKey": "",
+    "clientId": ""
+  },
+  "twitch": {
+    "clientId": "",
+    "clientSecret": ""
+  },
+  "users": [
+    {
+      "discordId": 0,
+      "twitch": "lofigirl",
+      "youtube": "@LofiGirl"
+    }
+  ]
+}
