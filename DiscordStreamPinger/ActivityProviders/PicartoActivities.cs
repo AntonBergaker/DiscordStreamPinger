@@ -1,4 +1,5 @@
-﻿using System.Net.Http.Headers;
+﻿using DiscordStreamPinger.ActivityProviders;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 
@@ -46,10 +47,10 @@ internal class PicartoActivities {
                     var games = json["category"] as JsonArray ?? [];
                     var game = games.FirstOrDefault()?.GetValue<string>() ?? "No category detected";
 
-                    if (newStatus != oldStatus) {
-                        StreamingStream? streamingStream = null;
+                    if (newStatus != oldStatus && oldStatus != PicartoUserStatus.Unknown) {
+                        StreamData? activity = null;
                         if (newStatus == PicartoUserStatus.Online) {
-                            streamingStream = new(
+                            activity = new(
                                 StreamUrl: $"https://picarto.tv/{user.Username}",
                                 Game: game,
                                 Title: json["title"]?.GetValue<string>() ?? "Some title"
@@ -66,7 +67,7 @@ internal class PicartoActivities {
 
                         await user.SetStreamingStatus(
                             PicartoStatusToStreamingStatus(newStatus),
-                            streamingStream
+                            activity
                         );
                         
                     }
@@ -84,11 +85,11 @@ internal class PicartoActivities {
         }
     }
 
-    private class PicartoActivity(string username, string avatarUrl) : BaseActivity(username, avatarUrl) {
+    private class PicartoActivity(string username, string avatarUrl) : BaseStreamerActivity(username, avatarUrl) {
         public PicartoUserStatus PicartoStatus { get; set; } = PicartoUserStatus.Unknown;
     }
 
-    public async Task<IActivity?> AddAccount(string accountName) {
+    public async Task<IStreamerActivity?> AddAccount(string accountName) {
         JsonObject json;
         try {
             json = await RequestAccountData(new(), accountName);

@@ -1,4 +1,4 @@
-﻿namespace StreamingBot;
+﻿namespace DiscordStreamPinger.ActivityProviders;
 
 public enum ActivityStatus {
     Unknown,
@@ -6,25 +6,25 @@ public enum ActivityStatus {
     Online,
 }
 
-interface IActivity {
+interface IStreamerActivity {
     delegate Task StreamingStatusChangedEvent();
     event StreamingStatusChangedEvent? StreamingStatusChanged;
 
     string Username { get; }
     string AvatarUrl { get; }
     ActivityStatus Status { get; }
-    StreamingStream? Stream { get; }
+    StreamData? Stream { get; }
 }
 
-abstract class BaseActivity(string username, string avatarUrl) : IActivity {
+abstract class BaseStreamerActivity(string username, string avatarUrl) : IStreamerActivity {
     public string Username { get; set; } = username;
     public string AvatarUrl { get; set; } = avatarUrl;
     public ActivityStatus Status { get; protected set; }
-    public StreamingStream? Stream { get; protected set; }
+    public StreamData? Stream { get; protected set; }
 
-    public event IActivity.StreamingStatusChangedEvent? StreamingStatusChanged;
+    public event IStreamerActivity.StreamingStatusChangedEvent? StreamingStatusChanged;
 
-    public async Task SetStreamingStatus(ActivityStatus newStatus, StreamingStream? stream) {
+    public async Task SetStreamingStatus(ActivityStatus newStatus, StreamData? stream) {
         if (StreamingStatusChanged == null) {
             return;
         }

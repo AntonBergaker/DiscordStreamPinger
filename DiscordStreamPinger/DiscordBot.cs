@@ -1,5 +1,7 @@
 ﻿using Discord;
 using Discord.WebSocket;
+using DiscordStreamPinger;
+using DiscordStreamPinger.ActivityProviders;
 using StreamingBot.ActivityProviders;
 using System.Globalization;
 
@@ -12,11 +14,9 @@ public class DiscordBot {
     private readonly YouTubeActivities _youTube;
     private readonly Config _config;
 
-    private SocketGuild? _guild;
-    private SocketTextChannel? _statusChannel;
-    private SocketTextChannel? _welcomeChannel;
+    private Dictionary<ulong, DiscordServer> _discordServers;
 
-    private List<User> _users;
+    private readonly Dictionary<string, Streamer> _streamers;
 
     public DiscordBot(Config config) {
         _config = config;
@@ -36,7 +36,12 @@ public class DiscordBot {
 
         _youTube = new YouTubeActivities(config.YouTube);
 
-        _users = new();
+        _discordServers = [];
+        _streamers = new();
+
+        foreach (var serverConfig in config.Discord.Servers) {
+            _discordServers.Add(serverConfig.GuildId, new DiscordServer(serverConfig));
+        }
     }
 
     private async Task Client_UserJoined(SocketGuildUser user) {
@@ -44,22 +49,11 @@ public class DiscordBot {
             return;
         }
 
-        var welcome = _config.Discord.Welcome;
-        if (welcome == null) {
+        if (_discordServers.TryGetValue(user.Guild.Id, out var server) == false) {
             return;
         }
 
-        var embed = new EmbedBuilder()
-            .WithTitle(welcome.Title.Replace("{user}", user.Mention))
-            .WithColor(uint.Parse(_config.Discord.Welcome.Color, NumberStyles.HexNumber))
-            .WithDescription(welcome.Description.Replace("{user}", user.Mention))
-        ;
-
-        if (_welcomeChannel == null) {
-            return;
-        }
-
-        await _welcomeChannel.SendMessageAsync(embed: embed.Build());
+        await server.SendWelcomeMessage(user);
     }
 
     private bool _hasInit = false;
@@ -69,113 +63,37 @@ public class DiscordBot {
             return;
         }
 
-        _hasInit = true;
-        _guild = _client.GetGuild(_config.Discord.GuildId);
-        _statusChannel = (SocketTextChannel)_guild.GetChannel(_config.Discord.StatusChannel);
-        if (_config.Discord.Welcome != null) {
-            _welcomeChannel = (SocketTextChannel)_guild.GetChannel(_config.Discord.Welcome.Channel);
+        foreach ((var streamerId, var configStreamer) in _config.Streamers) {
+            var streamer = new Streamer(configStreamer.DiscordId);
+
+            if (configStreamer.YouTube != null) {
+                var activity = await _youTube.AddChannel(configStreamer.YouTube);
+                RegisterActivity(streamer, activity, "YouTube", configStreamer.YouTube);
+            }
+            if (configStreamer.Picarto != null) {
+                var activity = await _picarto.AddAccount(configStreamer.Picarto);
+                RegisterActivity(streamer, activity, "picarto", configStreamer.Picarto);
+            }
+            if (configStreamer.Twitch != null) {
+                var activity = await _twitch.AddAccount(configStreamer.Twitch);
+                RegisterActivity(streamer, activity, "twitch", configStreamer.Twitch);
+            }
+
+            _streamers.Add(streamerId, streamer);
         }
 
-        foreach (var configUser in _config.Users) {
-            var user = new User(configUser.DiscordId);
-
-            if (configUser.YouTube != null) {
-                var activity = await _youTube.AddChannel(configUser.YouTube);
-                RegisterActivity(user, activity, "YouTube", configUser.YouTube);
-            }
-            if (configUser.Picarto != null) {
-                var activity = await _picarto.AddAccount(configUser.Picarto);
-                RegisterActivity(user, activity, "picarto", configUser.Picarto);
-            }
-            if (configUser.Twitch != null) {
-                var activity = await _twitch.AddAccount(configUser.Twitch);
-                RegisterActivity(user, activity, "twitch", configUser.Twitch);
-            }
-
-            _users.Add(user);
+        foreach (var discordServer in _discordServers.Values) {
+            discordServer.Init(_client, _streamers);
         }
     }
 
-    private Embed[] GetEmbeds(User user) {
-        return user.Activities.Where(x => x.Status == ActivityStatus.Online).Select(x => BuildEmbed(x)).ToArray();
-    }
 
-    private Embed BuildEmbed(IActivity activity) {
-        var stream = activity.Stream!;
-        return new EmbedBuilder()
-            .WithTitle($"{activity.Username} went live!")
-            .WithDescription($"Streaming: **{stream.Game}**\n\n{stream.Title}")
-            .WithColor(0x3498db)
-            .WithUrl(stream.StreamUrl)
-            .WithThumbnailUrl(activity.AvatarUrl)
-            .Build();
-    }
-
-    private void RegisterActivity(User user, IActivity? activity, string service, string serviceParameters) {
+    private void RegisterActivity(Streamer user, IStreamerActivity? activity, string service, string serviceParameters) {
         if (activity == null) {
             Console.WriteLine($"Failed to add service {service} account {serviceParameters}");
             return;
         }
         user.Activities.Add(activity);
-
-        activity.StreamingStatusChanged += () => Activity_StreamingStatusChanged(user);
-    }
-
-    private async Task Activity_StreamingStatusChanged(User user) {
-        var isOnline = user.Activities.Any(x => x.Status == ActivityStatus.Online);
-        
-        await UpdateRoles(user, isOnline);
-
-        // If already has message
-        if (user.DiscordMessage != null) {
-            // Clear message, went offline
-            if (isOnline == false) {
-                user.DiscordMessage = null;
-                return;
-            }
-
-            // Update message
-            await user.DiscordMessage.ModifyAsync((props) => {
-                props.Embeds = GetEmbeds(user);
-            });
-            return;
-        }
-
-        if (_statusChannel == null) {
-            return;
-        }
-
-        if (isOnline) {
-            // If new message
-            string? text = null;
-            if (_config.Discord.PingedRole != 0) {
-                text = $"<@&{_config.Discord.PingedRole}>";
-            }
-
-            var message = await _statusChannel.SendMessageAsync(text, embeds: GetEmbeds(user));
-            user.DiscordMessage = message;
-        }
-    }
-
-    private async Task UpdateRoles(User user, bool isOnline) {
-        if (_guild != null) {
-            var discordUser = _guild.GetUser(user.DiscordId);
-            var role = _guild.Roles.FirstOrDefault(x => x.Id == _config.Discord.StreamingRole);
-
-            if (discordUser != null && role != null) {
-                try {
-                    if (isOnline == false) {
-                        await discordUser.RemoveRoleAsync(role);
-                    }
-                    else if (isOnline) {
-                        await discordUser.AddRoleAsync(role);
-                    }
-                }
-                catch (Exception ex) {
-                    Console.WriteLine(ex);
-                }
-            }
-        }
     }
 
 
@@ -195,5 +113,6 @@ public class DiscordBot {
         _ = _youTube.Start();
         await _client.LoginAsync(TokenType.Bot, _config.Discord.Token);
         await _client.StartAsync();
+
     }
 }

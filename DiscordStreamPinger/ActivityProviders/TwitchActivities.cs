@@ -1,4 +1,4 @@
-﻿using Discord;
+﻿using DiscordStreamPinger.ActivityProviders;
 using TwitchLib.Api;
 using TwitchApiUser = TwitchLib.Api.Helix.Models.Users.GetUsers.User;
 
@@ -10,7 +10,7 @@ internal class TwitchActivities {
         Online
     }
 
-    private class TwitchUser(string twitchId, string name, string avatarUrl) : BaseActivity(name, avatarUrl) {
+    private class TwitchUser(string twitchId, string name, string avatarUrl) : BaseStreamerActivity(name, avatarUrl) {
         public string TwitchId { get; } = twitchId;
         public TwitchUserStatus TwitchStatus { get; set; } = TwitchUserStatus.Unknown;
     }
@@ -41,12 +41,10 @@ internal class TwitchActivities {
                     var newStatus = isOnline ? TwitchUserStatus.Online : TwitchUserStatus.Offline;
                     var oldStatus = user.TwitchStatus;
 
-                    if (newStatus != oldStatus) {
-
-
-                        StreamingStream? streamingStream = null;
+                    if (newStatus != oldStatus && oldStatus != TwitchUserStatus.Unknown) {
+                        StreamData? activity = null;
                         if (newStatus == TwitchUserStatus.Online && stream != null) {
-                            streamingStream = new(
+                            activity = new(
                                 StreamUrl: $"https://twitch.tv/{stream.UserLogin}",
                                 Game: stream.GameName,
                                 Title: stream.Title
@@ -58,7 +56,7 @@ internal class TwitchActivities {
 
                         await user.SetStreamingStatus(
                             TwitchStatusToStreamingStatus(newStatus),
-                            streamingStream
+                            activity
                         );
 
                     }
@@ -82,7 +80,7 @@ internal class TwitchActivities {
         _ => ActivityStatus.Unknown
     };
 
-    public async Task<IActivity?> AddAccount(string twitchAccount) {
+    public async Task<IStreamerActivity?> AddAccount(string twitchAccount) {
         var twitchUser = await GetUser(twitchAccount);
 
         if (twitchUser == null) {

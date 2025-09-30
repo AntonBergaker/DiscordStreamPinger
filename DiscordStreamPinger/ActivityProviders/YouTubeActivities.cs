@@ -1,10 +1,8 @@
-﻿
-
+﻿using DiscordStreamPinger.ActivityProviders;
 using Google.Apis.Services;
 using Google.Apis.YouTube.v3;
 using Google.Apis.YouTube.v3.Data;
-using System.Reflection.Metadata;
-using System.Text.Json.Nodes;
+using StreamData = DiscordStreamPinger.ActivityProviders.StreamData;
 
 namespace StreamingBot.ActivityProviders;
 internal class YouTubeActivities {
@@ -25,13 +23,13 @@ internal class YouTubeActivities {
         Offline,
     }
 
-    private class YouTubeChannel(string youtubeId, string username, string avatarUrl) : BaseActivity(username, avatarUrl) {
+    private class YouTubeChannel(string youtubeId, string username, string avatarUrl) : BaseStreamerActivity(username, avatarUrl) {
         public string YoutubeId { get; } = youtubeId;
         
         public YouTubeStatus YouTubeStatus { get; set; } = YouTubeStatus.Unknown;
     }
 
-    public async Task<IActivity?> AddChannel(string handle) {
+    public async Task<IStreamerActivity?> AddChannel(string handle) {
         var youTubeChannel = await GetChannel(handle);
         if (youTubeChannel == null) {
             return null;
@@ -83,11 +81,11 @@ internal class YouTubeActivities {
                     var newStatus = youTubeStream == null ? YouTubeStatus.Offline : YouTubeStatus.Live;
                     var oldStatus = channel.YouTubeStatus;
 
-                    if (newStatus != oldStatus) {
-                        StreamingStream? streamingStream = null;
+                    if (newStatus != oldStatus && oldStatus != YouTubeStatus.Unknown) {
+                        StreamData? activity = null;
                         if (newStatus == YouTubeStatus.Live && youTubeStream != null) {
                             var (id, content, topic) = youTubeStream.Value;
-                            streamingStream = new(
+                            activity = new(
                                 StreamUrl: $"https://youtu.be/{id}",
                                 Game: topic.TopicCategories.FirstOrDefault() ?? "Some game",
                                 Title: content.Title
@@ -103,7 +101,7 @@ internal class YouTubeActivities {
 
                         await channel.SetStreamingStatus(
                             YouTubeStatusToActivityStatus(newStatus),
-                            streamingStream
+                            activity
                         );
 
                     }
@@ -117,7 +115,7 @@ internal class YouTubeActivities {
                 fails++;
             }
 
-            await Task.Delay(10000 * (fails + 1));
+            await Task.Delay(865 * 1000 * (fails + 1));
         }
     }
 
